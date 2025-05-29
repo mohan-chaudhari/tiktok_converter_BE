@@ -127,24 +127,40 @@ async def youtube_auth(
 
 @router.get("/youtube/callback")
 async def youtube_callback(request: Request):
-    """Handle YouTube OAuth2 callback and store tokens."""
+    """Handle YouTube OAuth2 callback, store tokens, and redirect to frontend with token."""
+    logger.info(f"Callback request URL: {request.url}")
+    logger.info(f"Callback query parameters: {request.query_params}")
+    logger.info(f"Callback headers: {request.headers}")
+    logger.info(f"Session data: {request.session}")
+    
     try:
+        # Check for OAuth error in query parameters
+        if "error" in request.query_params:
+            error = request.query_params["error"]
+            logger.error(f"OAuth error in callback: {error}")
+            raise HTTPException(status_code=400, detail=f"YouTube authentication failed: {error}")
+
         # Verify session data
         user_id = request.session.get("user_id")
         auth_token = request.session.get("auth_token")
         
         if not user_id or not auth_token:
-            logger.error("Missing session data in callback")
+            logger.error("Missing session data in callback: user_id=%s, auth_token=%s", user_id, auth_token)
             raise HTTPException(status_code=400, detail="Invalid session state")
 
         # Get token data from the callback
+        logger.info("Attempting to exchange authorization code for token")
         token_data = await oauth.youtube.authorize_access_token(request)
+        if not token_data.get("access_token"):
+            logger.error("No access token received from token exchange")
+            raise HTTPException(status_code=400, detail="Failed to obtain YouTube access token")
 
         # Log token data for debugging (with sensitive info masked)
         safe_token_data = {k: (v[:10] + '...' if isinstance(v, str) and k != 'expires_in' else v) for k, v in token_data.items()}
         logger.info(f"YouTube token data received: {safe_token_data}")
 
         # Store tokens
+        logger.info(f"Updating youtube_token_store for user_id: {user_id}")
         youtube_token_store[user_id] = {
             "access_token": token_data["access_token"],
             "refresh_token": token_data.get("refresh_token"),
@@ -152,19 +168,26 @@ async def youtube_callback(request: Request):
         }
 
         # Clear session data
+        logger.info("Clearing session data for user_id: %s", user_id)
         request.session.pop("user_id", None)
         request.session.pop("auth_token", None)
 
-        # Redirect back to frontend
+        # Redirect to frontend with token
         frontend_url = config.FRONTEND_URL or "http://localhost:8080"
-        return RedirectResponse(url=f"{frontend_url}/youtube/callback?success=true")
+        redirect_url = f"{frontend_url}/youtube/callback?youtube_access_token={token_data['access_token']}&user_id={user_id}"
+        logger.info(f"Redirecting to frontend: {redirect_url}")
+        return RedirectResponse(url=redirect_url)
 
     except Exception as e:
-        logger.error(f"YouTube callback failed: {str(e)}")
+        logger.error(f"YouTube callback failed: {str(e)}", exc_info=True)
         # Clear session data on error
         request.session.pop("user_id", None)
         request.session.pop("auth_token", None)
-        raise HTTPException(status_code=400, detail=f"YouTube authentication failed: {str(e)}")
+        # Redirect to frontend with error
+        frontend_url = config.FRONTEND_URL or "http://localhost:8080"
+        error_redirect_url = f"{frontend_url}/youtube/callback?error={str(e)}"
+        logger.info(f"Redirecting to frontend with error: {error_redirect_url}")
+        return RedirectResponse(url=error_redirect_url)
 
 @router.post("/download", response_model=DownloadResponseDTO, dependencies=[Depends(get_current_user)])
 async def download_video(request: DownloadRequestDTO, user=Depends(get_current_user)):

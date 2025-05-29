@@ -1,0 +1,68 @@
+openapi: 3.0.0
+info:
+  title: TikTok Converter API
+  version: 1.0.0
+  description: API for downloading and converting TikTok videos
+paths:
+  /api/download:
+    post:
+      summary: Download TikTok video
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DownloadRequest"
+      responses:
+        "200":
+          description: Successful download
+        "400":
+          description: Download error
+  /api/convert:
+    post:
+      summary: Convert video for YouTube
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConvertRequest"
+      responses:
+        "200":
+          description: Successful conversion
+        "400":
+          description: Conversion error
+components:
+  schemas:
+    DownloadRequest:
+      type: object
+      properties:
+        url:
+          type: string
+        output_folder:
+          type: string
+      required:
+        - url
+    ConvertRequest:
+      type: object
+      properties:
+        input_path:
+          type: string
+        output_folder:
+          type: string
+        quality:
+          type: string
+          enum:
+            [
+              "standard",
+              "high",
+              "ultrahd",
+              "",
+              "",
+              "tiktokToYouTube16_9",
+              "tiktokToYouTube16_9Blur",
+              "tiktokToYouTubeSimple",
+            ]
+          nullable: true
+      required:
+        - input_path
